@@ -1,5 +1,17 @@
 import { Telegraf } from "telegraf";
 import axios from "axios";
+import express from "express";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot is running");
+});
+
+app.listen(PORT, () => {
+  console.log("🌐 HTTP server ativo na porta", PORT);
+});
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND = process.env.BACKEND_URL;

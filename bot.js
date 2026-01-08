@@ -1,11 +1,12 @@
 import { Telegraf } from "telegraf";
 import axios from "axios";
 
-// Token do bot (variável de ambiente)
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const BACKEND = process.env.BACKEND_URL;
 
-// URL do backend
-const BACKEND = "https://backend-e58o.onrender.com";
+if (!BOT_TOKEN || !BACKEND) {
+  throw new Error("❌ Variáveis de ambiente em falta");
+}
 
 const bot = new Telegraf(BOT_TOKEN);
 

@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Bot Telegram integrado com backend de anúncios",
   "type": "module",
-  "main": "bot.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "axios": "^1.7.0",

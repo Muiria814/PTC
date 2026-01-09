@@ -5,14 +5,12 @@ import express from "express";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ===== SERVIDOR HTTP =====
 app.get("/", (req, res) => {
   res.send("Bot is running");
 });
 
-app.listen(PORT, () => {
-  console.log("🌐 HTTP server ativo na porta", PORT);
-});
-
+// ===== BOT =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND = process.env.BACKEND_URL;
 
@@ -28,20 +26,14 @@ bot.start(async (ctx) => {
   const name = ctx.from.first_name;
 
   try {
-    // Registra o usuário no backend
-    await axios.post(`${BACKEND}/telegram/register`, {
-      telegramId,
-      name
-    });
+    await axios.post(`${BACKEND}/telegram/register`, { telegramId, name });
   } catch (err) {
     console.error("Erro ao registrar usuário:", err.message);
   }
 
   ctx.reply(
-    `👋 Olá ${name}!\n\n` +
-    `Bem-vindo ao bot oficial!\n\n` +
-    `Use /saldo para ver seu saldo\n` +
-    `Use /ganhar para ver anúncios`
+    `👋 Olá ${name}!\n\nBem-vindo ao bot oficial!\n\n` +
+    `Use /saldo para ver seu saldo\nUse /ganhar para ver anúncios`
   );
 });
 
@@ -75,11 +67,7 @@ bot.command("ganhar", async (ctx) => {
     const ad = res.data.ad;
 
     ctx.reply(
-      `📢 Anúncio disponível!\n\n` +
-      `🔗 ${ad.url}\n` +
-      `⏳ Tempo: ${ad.time}s\n` +
-      `💵 Recompensa: ${ad.reward} USD\n\n` +
-      `Depois de ver, use /confirmar`
+      `📢 Anúncio disponível!\n\n🔗 ${ad.url}\n⏳ Tempo: ${ad.time}s\n💵 Recompensa: ${ad.reward} USD\n\nDepois de ver, use /confirmar`
     );
 
   } catch (err) {
@@ -93,23 +81,20 @@ bot.command("confirmar", async (ctx) => {
   const telegramId = ctx.from.id;
 
   try {
-    const res = await axios.post(`${BACKEND}/telegram/confirmar`, {
-      telegramId
-    });
+    const res = await axios.post(`${BACKEND}/telegram/confirmar`, { telegramId });
 
     if (!res.data.success) {
       return ctx.reply("⚠️ Ainda não passou o tempo ou você já recebeu a recompensa.");
     }
 
     ctx.reply(`🎉 Recompensa recebida: ${res.data.reward} USD`);
-
   } catch (err) {
     console.error("Erro ao confirmar anúncio:", err.message);
     ctx.reply("⚠️ Ocorreu um erro ao confirmar a visualização.");
   }
 });
 
-// ===== INICIA O BOT =====
+// ===== INICIA SERVIDOR + BOT (apenas UM listen!) =====
 app.listen(PORT, async () => {
   console.log("🌐 HTTP server ativo na porta", PORT);
 

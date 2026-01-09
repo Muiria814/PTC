@@ -1,21 +1,18 @@
+import express from "express";
 import { Telegraf } from "telegraf";
 import axios from "axios";
-import express from "express";
 
 const app = express();
+app.use(express.json());
+
 const PORT = process.env.PORT || 3000;
-
-// ===== SERVIDOR HTTP =====
-app.get("/", (req, res) => {
-  res.send("Bot is running");
-});
-
-// ===== BOT =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND = process.env.BACKEND_URL;
+const REPLIT_URL = process.env.REPLIT_URL; // https://ptc--MUIRIA.replit.app
 
-if (!BOT_TOKEN || !BACKEND) {
-  console.error("❌ Variáveis de ambiente em falta");
+if (!BOT_TOKEN || !BACKEND || !REPLIT_URL) {
+  console.error("❌ Variáveis de ambiente em falta: BOT_TOKEN, BACKEND_URL, REPLIT_URL");
+  process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -32,8 +29,7 @@ bot.start(async (ctx) => {
   }
 
   ctx.reply(
-    `👋 Olá ${name}!\n\nBem-vindo ao bot oficial!\n\n` +
-    `Use /saldo para ver seu saldo\nUse /ganhar para ver anúncios`
+    `👋 Olá ${name}!\nBem-vindo ao bot oficial!\nUse /saldo para ver seu saldo\nUse /ganhar para ver anúncios`
   );
 });
 
@@ -65,11 +61,9 @@ bot.command("ganhar", async (ctx) => {
     }
 
     const ad = res.data.ad;
-
     ctx.reply(
-      `📢 Anúncio disponível!\n\n🔗 ${ad.url}\n⏳ Tempo: ${ad.time}s\n💵 Recompensa: ${ad.reward} USD\n\nDepois de ver, use /confirmar`
+      `📢 Anúncio disponível!\n🔗 ${ad.url}\n⏳ Tempo: ${ad.time}s\n💵 Recompensa: ${ad.reward} USD\nUse /confirmar depois de ver.`
     );
-
   } catch (err) {
     console.error("Erro ao buscar anúncios:", err.message);
     ctx.reply("⚠️ Ocorreu um erro ao buscar anúncios.");
@@ -94,23 +88,27 @@ bot.command("confirmar", async (ctx) => {
   }
 });
 
-// ===== INICIA SERVIDOR + BOT (apenas UM listen!) =====
-app.listen(PORT, async () => {
-  console.log("🌐 HTTP server ativo na porta", PORT);
+// ===== WEBHOOK =====
+const webhookPath = `/webhook/${BOT_TOKEN}`;
+app.use(bot.webhookCallback(webhookPath));
 
+// Configura o webhook no Telegram
+(async () => {
   try {
-    await bot.launch();
-    console.log("🤖 Bot do Telegram está online!");
+    const url = `${REPLIT_URL}${webhookPath}`;
+    await bot.telegram.setWebhook(url);
+    console.log("✅ Webhook configurado em:", url);
   } catch (err) {
-    console.error("❌ Erro ao iniciar o bot:", err);
+    console.error("❌ Erro ao configurar webhook:", err);
   }
+})();
+
+// ===== SERVIDOR =====
+app.get("/", (req, res) => res.send("Bot is running"));
+app.listen(PORT, () => {
+  console.log("🌐 HTTP server ativo na porta", PORT);
 });
 
 // ===== PROTEÇÃO CONTRA CRASH =====
-process.on("unhandledRejection", (err) => {
-  console.error("❌ Unhandled Rejection:", err);
-});
-
-process.on("uncaughtException", (err) => {
-  console.error("❌ Uncaught Exception:", err);
-});
+process.on("unhandledRejection", (err) => console.error("❌ Unhandled Rejection:", err));
+process.on("uncaughtException", (err) => console.error("❌ Uncaught Exception:", err));

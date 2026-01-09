@@ -17,7 +17,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND = process.env.BACKEND_URL;
 
 if (!BOT_TOKEN || !BACKEND) {
-  throw new Error("❌ Variáveis de ambiente em falta");
+  console.error("❌ Variáveis de ambiente em falta");
 }
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -110,5 +110,22 @@ bot.command("confirmar", async (ctx) => {
 });
 
 // ===== INICIA O BOT =====
-bot.launch();
-console.log("🤖 Bot do Telegram está online!");
+app.listen(PORT, async () => {
+  console.log("🌐 HTTP server ativo na porta", PORT);
+
+  try {
+    await bot.launch();
+    console.log("🤖 Bot do Telegram está online!");
+  } catch (err) {
+    console.error("❌ Erro ao iniciar o bot:", err);
+  }
+});
+
+// ===== PROTEÇÃO CONTRA CRASH =====
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled Rejection:", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught Exception:", err);
+});

@@ -1,5 +1,5 @@
 {
-  "name": "telegram-bot",
+  "name": "ptcbot",
   "version": "1.0.0",
   "description": "Bot Telegram com polling e Supabase",
   "type": "module",

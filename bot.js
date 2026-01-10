@@ -1,20 +1,20 @@
-import express from "express";
 import { Telegraf } from "telegraf";
-import axios from "axios";
+import { createClient } from "@supabase/supabase-js";
 
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
+// ===== ENV =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const BACKEND = process.env.BACKEND_URL;
-const REPLIT_URL = process.env.REPLIT_URL; // https://ptc--MUIRIA.replit.app
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!BOT_TOKEN || !BACKEND || !REPLIT_URL) {
-  console.error("❌ Variáveis de ambiente em falta: BOT_TOKEN, BACKEND_URL, REPLIT_URL");
+if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
+  console.error("❌ Variáveis de ambiente em falta");
   process.exit(1);
 }
 
+// ===== SUPABASE =====
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
 // ===== START =====
@@ -22,14 +22,25 @@ bot.start(async (ctx) => {
   const telegramId = ctx.from.id;
   const name = ctx.from.first_name;
 
-  try {
-    await axios.post(`${BACKEND}/telegram/register`, { telegramId, name });
-  } catch (err) {
-    console.error("Erro ao registrar usuário:", err.message);
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (!user) {
+    await supabase.from("users").insert({
+      telegram_id: telegramId,
+      name,
+      balance: 0
+    });
   }
 
   ctx.reply(
-    `👋 Olá ${name}!\nBem-vindo ao bot oficial!\nUse /saldo para ver seu saldo\nUse /ganhar para ver anúncios`
+    `👋 Olá ${name}!\n\n` +
+    `Bem-vindo ao bot!\n\n` +
+    `📊 /saldo – Ver saldo\n` +
+    `📢 /ganhar – Ver anúncios`
   );
 });
 
@@ -37,78 +48,96 @@ bot.start(async (ctx) => {
 bot.command("saldo", async (ctx) => {
   const telegramId = ctx.from.id;
 
-  try {
-    const res = await axios.get(`${BACKEND}/telegram/saldo/${telegramId}`);
+  const { data, error } = await supabase
+    .from("users")
+    .select("balance")
+    .eq("telegram_id", telegramId)
+    .single();
 
-    if (!res.data.success) return ctx.reply("⚠️ Você ainda não tem conta.");
-
-    ctx.reply(`💰 Seu saldo: ${res.data.saldo} USD`);
-  } catch (err) {
-    console.error("Erro ao consultar saldo:", err.message);
-    ctx.reply("⚠️ Ocorreu um erro ao consultar o saldo.");
+  if (error || !data) {
+    return ctx.reply("⚠️ Conta não encontrada.");
   }
+
+  ctx.reply(`💰 Seu saldo: ${data.balance} USD`);
 });
 
-// ===== GANHAR ANÚNCIOS =====
+// ===== GANHAR =====
 bot.command("ganhar", async (ctx) => {
   const telegramId = ctx.from.id;
 
-  try {
-    const res = await axios.get(`${BACKEND}/telegram/anuncios/${telegramId}`);
+  const { data: ad } = await supabase
+    .from("ads")
+    .select("*")
+    .order("id", { ascending: false })
+    .limit(1)
+    .single();
 
-    if (!res.data.success || !res.data.ad) {
-      return ctx.reply("⚠️ Nenhum anúncio disponível agora. Tente mais tarde.");
-    }
-
-    const ad = res.data.ad;
-    ctx.reply(
-      `📢 Anúncio disponível!\n🔗 ${ad.url}\n⏳ Tempo: ${ad.time}s\n💵 Recompensa: ${ad.reward} USD\nUse /confirmar depois de ver.`
-    );
-  } catch (err) {
-    console.error("Erro ao buscar anúncios:", err.message);
-    ctx.reply("⚠️ Ocorreu um erro ao buscar anúncios.");
+  if (!ad) {
+    return ctx.reply("⚠️ Nenhum anúncio disponível.");
   }
+
+  await supabase.from("ad_views").insert({
+    telegram_id: telegramId,
+    ad_id: ad.id,
+    started_at: new Date()
+  });
+
+  ctx.reply(
+    `📢 Anúncio disponível\n\n` +
+    `🔗 ${ad.url}\n` +
+    `⏳ Aguarde ${ad.time}s\n` +
+    `💵 Recompensa: ${ad.reward} USD\n\n` +
+    `Depois use /confirmar`
+  );
 });
 
-// ===== CONFIRMAR VISUALIZAÇÃO =====
+// ===== CONFIRMAR =====
 bot.command("confirmar", async (ctx) => {
   const telegramId = ctx.from.id;
 
-  try {
-    const res = await axios.post(`${BACKEND}/telegram/confirmar`, { telegramId });
+  const { data: view } = await supabase
+    .from("ad_views")
+    .select("*")
+    .eq("telegram_id", telegramId)
+    .eq("confirmed", false)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .single();
 
-    if (!res.data.success) {
-      return ctx.reply("⚠️ Ainda não passou o tempo ou você já recebeu a recompensa.");
-    }
-
-    ctx.reply(`🎉 Recompensa recebida: ${res.data.reward} USD`);
-  } catch (err) {
-    console.error("Erro ao confirmar anúncio:", err.message);
-    ctx.reply("⚠️ Ocorreu um erro ao confirmar a visualização.");
+  if (!view) {
+    return ctx.reply("⚠️ Nenhum anúncio pendente.");
   }
+
+  const elapsed =
+    (Date.now() - new Date(view.started_at).getTime()) / 1000;
+
+  const { data: ad } = await supabase
+    .from("ads")
+    .select("*")
+    .eq("id", view.ad_id)
+    .single();
+
+  if (elapsed < ad.time) {
+    return ctx.reply("⏳ Ainda não passou o tempo mínimo.");
+  }
+
+  await supabase
+    .from("ad_views")
+    .update({ confirmed: true })
+    .eq("id", view.id);
+
+  await supabase.rpc("add_balance", {
+    tg_id: telegramId,
+    amount: ad.reward
+  });
+
+  ctx.reply(`🎉 Recompensa recebida: ${ad.reward} USD`);
 });
 
-// ===== WEBHOOK =====
-const webhookPath = `/webhook/${BOT_TOKEN}`;
-app.use(bot.webhookCallback(webhookPath));
+// ===== START POLLING =====
+bot.launch();
+console.log("🤖 Bot Telegram iniciado (polling ativo)");
 
-// Configura o webhook no Telegram
-(async () => {
-  try {
-    const url = `${REPLIT_URL}${webhookPath}`;
-    await bot.telegram.setWebhook(url);
-    console.log("✅ Webhook configurado em:", url);
-  } catch (err) {
-    console.error("❌ Erro ao configurar webhook:", err);
-  }
-})();
-
-// ===== SERVIDOR =====
-app.get("/", (req, res) => res.send("Bot is running"));
-app.listen(PORT, () => {
-  console.log("🌐 HTTP server ativo na porta", PORT);
-});
-
-// ===== PROTEÇÃO CONTRA CRASH =====
-process.on("unhandledRejection", (err) => console.error("❌ Unhandled Rejection:", err));
-process.on("uncaughtException", (err) => console.error("❌ Uncaught Exception:", err));
+// ===== GRACEFUL SHUTDOWN =====
+process.on("SIGTERM", () => bot.stop("SIGTERM"));
+process.on("SIGINT", () => bot.stop("SIGINT"));

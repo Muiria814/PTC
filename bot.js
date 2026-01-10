@@ -1,21 +1,29 @@
+import express from "express";
 import { Telegraf } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 
-// ===== ENV =====
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_KEY) {
-  console.error("❌ Variáveis de ambiente em falta");
-  process.exit(1);
-}
+app.get("/", (req, res) => res.send("Bot is running"));
 
-// ===== SUPABASE =====
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// ===== Supabase =====
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-// ===== BOT =====
-const bot = new Telegraf(BOT_TOKEN);
+// ===== Bot =====
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+bot.start((ctx) => ctx.reply("Bot ativo!"));
+
+// exemplo de polling
+bot.launch();
+console.log("🤖 Bot Telegram iniciado (polling ativo)");
+
+// ===== Express listen =====
+app.listen(PORT, () => console.log(`🌐 HTTP server ativo na porta ${PORT}`));
 
 // ===== START =====
 bot.start(async (ctx) => {

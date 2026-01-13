@@ -41,12 +41,36 @@ try {
   // ===== Comandos do bot =====
 
   // START
-  bot.start(async (ctx) => {
-    const telegramId = ctx.from.id;
-    const name = ctx.from.first_name;
+bot.start(async (ctx) => {
+  const telegramId = ctx.from.id;
+  const name = ctx.from.first_name || "User";
 
-    ctx.reply(`👋 Olá ${name}! Bem-vindo ao bot!`);
-  });
+  try {
+    // Verificar se já existe
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .single();
+
+    // Se não existir, criar
+    if (!user) {
+      await supabase.from("users").insert([
+        {
+          telegram_id: telegramId,
+          name: name,
+          balance: 0
+        }
+      ]);
+    }
+
+    ctx.reply(`👋 Olá ${name}! Bem-vindo ao DogePTC 🐕`);
+
+  } catch (err) {
+    console.error("Erro no /start:", err);
+    ctx.reply("⚠️ Erro ao iniciar sua conta.");
+  }
+});
 
   // SALDO
   bot.command("saldo", async (ctx) => {

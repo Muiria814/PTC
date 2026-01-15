@@ -106,18 +106,18 @@ async function withdrawDOGE({ userId, address, amount }) {
     let tx = newtx.data;
     tx.signatures = [];
     tx.pubkeys = [];
+    
+// ===== SIGN COM ELLIPTIC =====
+const key = ec.keyFromPrivate(HOUSE_PRIVATE);
 
-    const pk = Buffer.from(HOUSE_PRIVATE, "hex");
-    const pubkey = Buffer.from(
-      secp256k1.publicKeyCreate(pk, true)
-    ).toString("hex");
+const pubkey = key.getPublic(true, "hex");
 
-    tx.tosign.forEach(ts => {
-      const sig = secp256k1.ecdsaSign(Buffer.from(ts, "hex"), pk);
-      const der = secp256k1.signatureExport(sig.signature);
-      tx.signatures.push(Buffer.from(der).toString("hex"));
-      tx.pubkeys.push(pubkey);
-    });
+tx.tosign.forEach(ts => {
+  const sig = key.sign(ts);
+  const der = Buffer.from(sig.toDER());
+  tx.signatures.push(der.toString("hex"));
+  tx.pubkeys.push(pubkey);
+});
 
     const sent = await axios.post(
       "https://api.blockcypher.com/v1/doge/main/txs/send",

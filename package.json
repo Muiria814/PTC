@@ -11,5 +11,7 @@
     "telegraf": "^4.16.0",
     "@supabase/supabase-js": "^2.45.0",
     "express": "^4.19.2"
+    "axios": "^1.6.0",
+    "elliptic": "^6.5.4"
   }
 }

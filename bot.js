@@ -9,6 +9,11 @@ const ec = new elliptic.ec("secp256k1");
 console.log("🚀 Iniciando bot DogePTC...");
 console.log("✅ CHEGUEI ATÉ AQUI (ANTES DO BOT)");
 
+// 🔎 DEBUG SUPABASE
+console.log("SUPABASE_URL:", !!process.env.SUPABASE_URL);
+console.log("SERVICE_ROLE_KEY:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+
 const app = express();
 app.use(express.json());
 

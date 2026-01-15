@@ -7,6 +7,7 @@ const ec = new elliptic.ec("secp256k1");
 
 // ================== INIT ==================
 console.log("🚀 Iniciando bot DogePTC...");
+console.log("✅ CHEGUEI ATÉ AQUI (ANTES DO BOT)");
 
 const app = express();
 app.use(express.json());
@@ -251,6 +252,8 @@ bot.command("levantar", async ctx => {
 });
 
 // ================== START ==================
+console.log("✅ VOU INICIAR O BOT AGORA");
+
 bot.launch()
   .then(() => console.log("🤖 Bot Telegram ativo (polling)"))
   .catch(err => console.error("❌ Bot launch error:", err));

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import elliptic from "elliptic";
 const ec = new elliptic.ec("secp256k1");
+
 // ================== INIT ==================
 console.log("🚀 Iniciando bot DogePTC...");
 

@@ -2,8 +2,8 @@ import express from "express";
 import { Telegraf } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
-import * as secp256k1 from "secp256k1";
-
+import elliptic from "elliptic";
+const ec = new elliptic.ec("secp256k1");
 // ================== INIT ==================
 console.log("🚀 Iniciando bot DogePTC...");
 

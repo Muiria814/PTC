@@ -154,25 +154,39 @@ bot.start(async ctx => {
   const name = ctx.from.first_name || "User";
 
   try {
-    const { data: user } = await supabase
+    // Verifica se o usuário já existe
+    const { data: user, error: selectError } = await supabase
       .from("users")
-      .select("id")
+      .select("*")
       .eq("telegram_id", telegramId)
       .single();
 
+    if (selectError && selectError.code !== "PGRST116") {
+      console.error("/start select error:", selectError);
+      return ctx.reply("⚠️ Erro ao verificar usuário.");
+    }
+
+    // Se não existe, cria
     if (!user) {
-      await supabase.from("users").insert([{
+      const { data: inserted, error: insertError } = await supabase.from("users").insert([{
         telegram_id: telegramId,
         name,
         balance: 0,
         doge: 0
       }]);
+
+      if (insertError) {
+        console.error("/start insert error:", insertError);
+        return ctx.reply("⚠️ Erro ao criar conta.");
+      }
+
+      console.log("Usuário criado:", inserted);
     }
 
     ctx.reply(`👋 Olá ${name}!\nBem-vindo ao DogePTC 🐕`);
 
   } catch (err) {
-    console.error("/start error:", err);
+    console.error("/start catch error:", err);
     ctx.reply("⚠️ Erro ao iniciar conta.");
   }
 });

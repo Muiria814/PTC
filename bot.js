@@ -176,7 +176,6 @@ bot.start(async ctx => {
       const { data: inserted, error: insertError } = await supabase.from("users").insert([{
         telegram_id: telegramId,
         name,
-        balance: 0,
         doge: 0
       }]);
 

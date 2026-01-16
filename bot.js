@@ -248,6 +248,10 @@ bot.command("levantar", async ctx => {
     .eq("telegram_id", telegramId)
     .single();
 
+  if (error) {
+  console.error("LEVANTAR ERROR:", error);
+  }
+
   if (!user)
     return ctx.reply("❌ Usuário não encontrado.");
 

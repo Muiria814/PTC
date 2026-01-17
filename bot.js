@@ -175,6 +175,7 @@ bot.start(async ctx => {
         telegram_id: telegramId,
         name,
         doge: 0
+        balance: 0
       }]);
 
       if (insertError) {

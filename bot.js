@@ -57,9 +57,7 @@ const supabase = createClient(
 // ================== BOT ==================
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// ==================================================
-// 🔥 FUNÇÃO INTERNA — WITHDRAW DOGE (REAL)
-// ==================================================
+// /levantar
 async function withdrawDOGE({ userId, address, amount }) {
   try {
     const HOUSE_ADDRESS = process.env.HOUSE_ADDRESS;

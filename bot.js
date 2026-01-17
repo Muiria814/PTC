@@ -144,8 +144,8 @@ tx.tosign.forEach(ts => {
     return { success: true, txHash };
 
   } catch (err) {
-    console.error("❌ WITHDRAW ERROR:", err.message);
-    return { success: false, message: err.message };
+    console.error("❌ WITHDRAW ERROR:", error.message);
+    return { success: false, message: error.message };
   }
 }
 

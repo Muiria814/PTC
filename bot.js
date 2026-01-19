@@ -56,21 +56,33 @@ const supabase = createClient(
 // ================== BOT ==================
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// /levantar
-async function withdrawDOGE({ userId, address, amount }) {
+// ====== WITHDRAW REAL (DOGE MAINNET) ======
+
+const HOUSE_ADDRESS = process.env.HOUSE_ADDRESS;
+const HOUSE_PRIVATE = process.env.HOUSE_PRIVATE;
+const TOKEN = process.env.BLOCKCYPHER_TOKEN;
+
+app.post("/withdraw", async (req, res) => {
   try {
-    const HOUSE_ADDRESS = process.env.HOUSE_ADDRESS;
-    const HOUSE_PRIVATE = process.env.HOUSE_PRIVATE;
-    const TOKEN = process.env.BLOCKCYPHER_TOKEN;
 
-    if (!HOUSE_ADDRESS || !HOUSE_PRIVATE || !TOKEN)
-      throw new Error("Configuração incompleta");
+    console.log("📩 /withdraw foi chamado!", req.body);
 
-    if (HOUSE_PRIVATE.length !== 64)
-      throw new Error("HOUSE_PRIVATE inválida");
+    // ===== VALIDAR ENV =====
+    if (!HOUSE_ADDRESS || !HOUSE_PRIVATE || !TOKEN) {
+      return res.json({ success:false, message:"Variáveis .env em falta" });
+    }
+
+    if (HOUSE_PRIVATE.length !== 64) {
+      return res.json({ success:false, message:"HOUSE_PRIVATE tem de ser chave HEX (64 chars)" });
+    }
+
+    const { userId, address, amount } = req.body;
+
+    if (!userId || !address || !amount)
+      return res.json({ success:false, message:"Dados incompletos" });
 
     if (amount < 0.001)
-      throw new Error("Mínimo 0.001 DOGE");
+      return res.json({ success:false, message:"Mínimo 0.001 DOGE" });
 
     // ===== USER =====
     const { data: user } = await supabase
@@ -79,74 +91,114 @@ async function withdrawDOGE({ userId, address, amount }) {
       .eq("id", userId)
       .single();
 
-    if (!user) throw new Error("Usuário não encontrado");
+    if (!user)
+      return res.json({ success:false, message:"Usuário não encontrado" });
 
     // ===== HOUSE =====
     const { data: house } = await supabase
       .from("users")
       .select("*")
-      .eq("role", "house")
+      .eq("role","house")
       .single();
 
-    if (!house) throw new Error("House não encontrada");
+    if (!house)
+      return res.json({ success:false, message:"House não encontrada" });
 
-    if ((user.doge || 0) < amount)
-      throw new Error("Saldo insuficiente");
+    if ((user.doge||0) < amount)
+      return res.json({ success:false, message:"Saldo insuficiente" });
 
-    if ((house.saldo || 0) < amount)
-      throw new Error("House sem saldo");
+    if ((house.saldo||0) < amount)
+      return res.json({ success:false, message:"House sem saldo" });
 
-    // ===== BLOCKCYPHER TX =====
+    // ===== CRIAR TX =====
     const newtx = await axios.post(
       "https://api.blockcypher.com/v1/doge/main/txs/new",
       {
-        inputs: [{ addresses: [HOUSE_ADDRESS] }],
-        outputs: [{ addresses: [address], value: Math.floor(amount * 1e8) }]
+        inputs:[{ addresses:[HOUSE_ADDRESS] }],
+        outputs:[{ addresses:[address], value:Math.floor(amount*1e8)}]
       },
-      { params: { token: TOKEN } }
+      { params:{ token:TOKEN } }
     );
 
     let tx = newtx.data;
-    tx.signatures = [];
-    tx.pubkeys = [];
     
-// ===== SIGN COM ELLIPTIC =====
-const key = ec.keyFromPrivate(HOUSE_PRIVATE);
+    console.log("NEW TX:", newtx.data);
+    
+// ===== ASSINAR CORRETAMENTE =====
+tx.signatures = [];
+tx.pubkeys = [];
 
-const pubkey = key.getPublic(true, "hex");
+// criar pk a partir da private key (uma vez)
+const pk = Buffer.from(HOUSE_PRIVATE, "hex");
+
+// criar pubkey compressa (33 bytes)
+const pubkey = Buffer.from(
+  secp256k1.publicKeyCreate(pk, true)
+).toString("hex");
 
 tx.tosign.forEach(ts => {
-  const sig = key.sign(ts);
-  const der = Buffer.from(sig.toDER());
-  tx.signatures.push(der.toString("hex"));
+
+  // ts já é hash pronto — não fazer SHA256 de novo
+  const msg = Buffer.from(ts, "hex");
+
+  // assinatura raw r||s
+  const sigObj = secp256k1.ecdsaSign(msg, pk);
+
+  // converter para DER
+  const der = secp256k1.signatureExport(sigObj.signature);
+
+  tx.signatures.push(Buffer.from(der).toString("hex"));
   tx.pubkeys.push(pubkey);
 });
-
+    
+    // ===== ENVIAR =====
     const sent = await axios.post(
       "https://api.blockcypher.com/v1/doge/main/txs/send",
       tx,
-      { params: { token: TOKEN } }
+      { params:{ token:TOKEN } }
     );
 
     const txHash = sent?.data?.tx?.hash;
-    if (!txHash) throw new Error("Falha ao enviar transação");
 
-    // ===== UPDATE SALDOS =====
+if (!txHash) {
+  console.log("BLOCKCYPHER ERROR:", sent.data);
+  return res.json({
+    success:false,
+    message:"Falha ao enviar transação"
+  });
+}
+    console.log("SEND RESULT:", sent.data);
+    
+    // ===== ATUALIZAR SALDOS =====
     await supabase.from("users")
-      .update({ doge: (user.doge || 0) - amount })
+      .update({ doge:(user.doge||0)-amount })
       .eq("id", userId);
 
     await supabase.from("users")
-      .update({ saldo: (house.saldo || 0) - amount })
-      .eq("role", "house");
+      .update({ saldo:(house.saldo||0)-amount })
+      .eq("role","house");
 
-    return { success: true, txHash };
+    return res.json({ success:true, txHash });
 
-  } catch (err) {
-    console.error("❌ WITHDRAW ERROR:", err.message);
-    return { success: false, message: err.message };
+  } catch(err) {
+
+    console.error("WITHDRAW ERROR:", err?.response?.data || err?.message || err);
+
+    console.log("🔥 DEBUG ERROR:", err?.response?.data, err?.message);
+
+    return res.json({
+      success:false,
+      message:"Erro ao processar withdraw"
+    });
   }
-}
+});
+app.get("/", (req, res) => {
+  res.send("Backend online 🚀");
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor a correr na porta ${PORT}`);
+});
 
 // ================== BOT COMMANDS ==================
 

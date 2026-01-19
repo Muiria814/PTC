@@ -2,7 +2,7 @@ import express from "express";
 import { Telegraf } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
-import elliptic from "elliptic";
+import secp256k1 from "secp256k1";
 const ec = new elliptic.ec("secp256k1");
 
 // ================== INIT ==================

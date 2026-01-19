@@ -1,5 +1,5 @@
 import express from "express";
-import { Telegraf } from "telegraf";
+import { Telegraf, Markup, session } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import secp256k1 from "secp256k1";
@@ -54,7 +54,16 @@ const supabase = createClient(
 );
 
 // ================== BOT ==================
+const { Telegraf, Markup } = require("telegraf");
 const bot = new Telegraf(process.env.BOT_TOKEN);
+bot.use(session());
+
+const mainMenu = Markup.keyboard([
+  ["🚀 INICIAR", "💰 SALDO"],
+  ["📺 GANHAR", "💸 LEVANTAR"]
+])
+  .resize()
+  .persistent();
 
 // ====== WITHDRAW REAL (DOGE MAINNET) ======
 
@@ -202,7 +211,6 @@ bot.start(async ctx => {
   const name = ctx.from.first_name || "User";
 
   try {
-    // Verifica se o usuário já existe
     const { data: user, error: selectError } = await supabase
       .from("users")
       .select("*")
@@ -214,60 +222,57 @@ bot.start(async ctx => {
       return ctx.reply("⚠️ Erro ao verificar usuário.");
     }
 
-    // Se não existe, cria
     if (!user) {
-      const { data: inserted, error: insertError } = await supabase.from("users").insert([{
-        telegram_id: telegramId,
-        name,
-        doge: 0
-        balance: 0
-      }]);
+      const { error: insertError } = await supabase
+        .from("users")
+        .insert([{
+          telegram_id: telegramId,
+          name,
+          doge: 0,
+          balance: 0
+        }]);
 
       if (insertError) {
         console.error("/start insert error:", insertError);
         return ctx.reply("⚠️ Erro ao criar conta.");
       }
-
-      console.log("Usuário criado:", inserted);
     }
 
-    ctx.reply(`👋 Olá ${name}!\nBem-vindo ao DogePTC 🐕`);
+    // ✅ RESPOSTA FINAL DO /start (COM BOTÕES)
+    return ctx.reply(
+      `👋 Olá ${name}!\nBem-vindo ao DogePTC 🐕`,
+      mainMenu
+    );
 
   } catch (err) {
     console.error("/start catch error:", err);
-    ctx.reply("⚠️ Erro ao iniciar conta.");
+    return ctx.reply("⚠️ Erro ao iniciar o bot.");
   }
 });
 
-// /saldo
-bot.command("saldo", async ctx => {
+
+// 🚀 BOTÃO INICIAR
+bot.hears("🚀 INICIAR", ctx => {
+  ctx.reply("🤖 Bot iniciado!", mainMenu);
+});
+
+
+// BOTÃO GANHAR
+bot.hears("📺 GANHAR", async ctx => {
+  await ctx.reply(
+    "📢 Assista ao anúncio para ganhar DOGE.\nClique no botão abaixo para confirmar e receber sua recompensa!",
+    Markup.inlineKeyboard([
+      Markup.button.callback("✅ CONFIRMAR", "confirm_reward")
+    ])
+  );
+});
+
+// CALLBACK DO BOTÃO
+bot.action("confirm_reward", async ctx => {
   const telegramId = ctx.from.id;
 
   try {
-    const { data } = await supabase
-      .from("users")
-      .select("doge")
-      .eq("telegram_id", telegramId)
-      .single();
-
-    if (!data) return ctx.reply("❌ Usuário não encontrado.");
-
-    ctx.reply(`💰 Saldo atual: ${data.doge} DOGE`);
-  } catch (err) {
-    ctx.reply("⚠️ Erro ao consultar saldo.");
-  }
-});
-
-// /ganhar
-bot.command("ganhar", ctx => {
-  ctx.reply("📢 Anúncio disponível!\nDepois use /confirmar");
-});
-
-// /confirmar
-bot.command("confirmar", async ctx => {
-  const telegramId = ctx.from.id;
-
-  try {
+    // Chama a função no Supabase para adicionar a recompensa
     const { error } = await supabase.rpc("add_balance", {
       tg_id: telegramId,
       amount: 1
@@ -275,48 +280,113 @@ bot.command("confirmar", async ctx => {
 
     if (error) throw error;
 
-    ctx.reply("🎉 +1 DOGE adicionado!");
+    // Responde ao usuário e desativa o botão
+    await ctx.editMessageText("🎉 +1 DOGE adicionado! ✅");
   } catch (err) {
-    console.error("/confirmar error:", err);
-    ctx.reply("⚠️ Erro ao creditar recompensa.");
+    console.error("Erro ao creditar recompensa:", err);
+    await ctx.reply("⚠️ Erro ao creditar recompensa. Tente novamente mais tarde.");
   }
+
+  // Evita que o botão fique ativo e o usuário clique várias vezes
+  await ctx.answerCbQuery();
 });
 
-// /levantar (simples)
-bot.command("levantar", async ctx => {
+// 💰 BOTÃO SALDO
+bot.hears("💰 SALDO", async ctx => {
   const telegramId = ctx.from.id;
 
-  const { data: user } = await supabase
+  const { data } = await supabase
     .from("users")
-    .select("id,doge")
+    .select("doge")
     .eq("telegram_id", telegramId)
     .single();
 
-  if (error) {
-  console.error("LEVANTAR ERROR:", error);
-  }
-
-  if (!user)
+  if (!data)
     return ctx.reply("❌ Usuário não encontrado.");
 
-  // ⚠️ EXEMPLO FIXO (depois tornamos interativo)
-  const address = "DXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
-  const amount = 1;
-
-  ctx.reply("⏳ Processando levantamento...");
-
-  const result = await withdrawDOGE({
-    userId: user.id,
-    address,
-    amount
-  });
-
-  if (!result.success)
-    return ctx.reply(`❌ ${result.message}`);
-
-  ctx.reply(`✅ Levantamento enviado!\nTX:\n${result.txHash}`);
+  ctx.reply(`💰 Saldo atual: ${data.doge} DOGE`);
 });
 
+
+// 💸 BOTÃO LEVANTAR
+bot.hears("💸 LEVANTAR", ctx => {
+  ctx.session = { step: "amount" };
+  ctx.reply("💸 INTRODUZIR O MONTANTE A LEVANTAR:");
+});
+
+bot.on("text", async ctx => {
+  if (!ctx.session?.step) return;
+
+  const text = ctx.message.text;
+
+  // PASSO 1 — MONTANTE
+  if (ctx.session.step === "amount") {
+    const amount = Number(text);
+
+    if (isNaN(amount) || amount <= 0)
+      return ctx.reply("❌ Valor inválido. Introduz um número válido.");
+
+    ctx.session.amount = amount;
+    ctx.session.step = "address";
+
+    return ctx.reply("📬 INTRODUZIR O ENDEREÇO DOGE:");
+  }
+
+  // PASSO 2 - ENDEREÇO 
+  if (ctx.session.step === "address") {
+    ctx.session.address = text;
+    ctx.session.step = "confirm";
+
+    return ctx.reply(
+      `✅ Confirmação do levantamento\n\n💰 Valor: ${ctx.session.amount} DOGE\n📬 Endereço: ${text}`,
+      Markup.inlineKeyboard([
+        Markup.button.callback("✅ ENVIAR", "send_withdraw")
+      ])
+    );
+  }
+});
+    
+bot.action("send_withdraw", async ctx => {
+  await ctx.answerCbQuery();
+
+  const telegramId = ctx.from.id;
+  const { amount, address } = ctx.session;
+
+  try {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id,doge")
+      .eq("telegram_id", telegramId)
+      .single();
+
+    if (!user)
+      return ctx.reply("❌ Usuário não encontrado.");
+
+    if ((user.doge || 0) < amount)
+      return ctx.reply("❌ Saldo insuficiente.");
+
+    ctx.reply("⏳ Processando levantamento...");
+
+    const result = await withdrawDOGE({
+      userId: user.id,
+      address,
+      amount
+    });
+
+    if (!result.success)
+      return ctx.reply(`❌ ${result.message}`);
+
+    ctx.reply(`✅ Levantamento enviado!\nTX:\n${result.txHash}`);
+
+    ctx.session = null;
+
+  } catch (err) {
+    console.error("SEND_WITHDRAW ERROR:", err);
+    ctx.reply("⚠️ Erro ao processar levantamento.");
+  }
+});
+
+ 
 // ================== START ==================
 console.log("✅ VOU INICIAR O BOT AGORA");
 

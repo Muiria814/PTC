@@ -5,7 +5,12 @@
   "type": "module",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "dev": "node --env-file=.env bot.js",
+    "dev:watch": "node --watch --env-file=.env bot.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "telegraf": "^4.16.0",
@@ -13,5 +18,7 @@
     "express": "^4.19.2",
     "axios": "^1.6.0",
     "secp256k1": "^4.0.2"
-  }
+  },
+  "keywords": ["telegram", "bot", "doge", "cryptocurrency", "ptc"],
+  "license": "MIT"
 }

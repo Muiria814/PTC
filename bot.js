@@ -291,13 +291,13 @@ bot.action("confirm_reward", async ctx => {
     // Chama a função no Supabase para adicionar a recompensa
     const { error } = await supabase.rpc("add_balance", {
       tg_id: telegramId,
-      amount: 1
+      amount: 0.1
     });
 
     if (error) throw error;
 
     // Responde ao usuário e desativa o botão
-    await ctx.editMessageText("🎉 +1 DOGE adicionado! ✅");
+    await ctx.editMessageText("🎉 +0.1 DOGE adicionado! ✅");
   } catch (err) {
     console.error("Erro ao creditar recompensa:", err);
     await ctx.reply("⚠️ Erro ao creditar recompensa. Tente novamente mais tarde.");

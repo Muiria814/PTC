@@ -6,11 +6,6 @@ import secp256k1 from "secp256k1";
 
 // ================== INIT ==================
 console.log("🚀 Iniciando bot DogePTC...");
-console.log("✅ CHEGUEI ATÉ AQUI (ANTES DO BOT)");
-
-// 🔎 DEBUG SUPABASE
-console.log("SUPABASE_URL:", !!process.env.SUPABASE_URL);
-console.log("SERVICE_ROLE_KEY:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const app = express();
 app.use(express.json());
@@ -35,17 +30,6 @@ REQUIRED_ENV.forEach(v => {
   }
 });
 
-// ================== PROTEÇÃO GLOBAL ==================
-process.on("unhandledRejection", err => {
-  console.error("UnhandledRejection:", err);
-});
-process.on("uncaughtException", err => {
-  console.error("UncaughtException:", err);
-});
-
-// ================== EXPRESS ==================
-app.get("/", (req, res) => res.send("🤖 DogePTC Bot Online"));
-
 // ================== SUPABASE ==================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -69,9 +53,52 @@ const HOUSE_ADDRESS = process.env.HOUSE_ADDRESS;
 const HOUSE_PRIVATE = process.env.HOUSE_PRIVATE;
 const TOKEN = process.env.BLOCKCYPHER_TOKEN;
 
+// ====== FUNÇÕES AUXILIARES ======
+
+async function getUserByTelegramId(telegramId) {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", telegramId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error("Erro ao buscar usuário:", error);
+      return null;
+    }
+    
+    return data;
+  } catch (err) {
+    console.error("Erro em getUserByTelegramId:", err);
+    return null;
+  }
+}
+
+async function withdrawDOGE({ userId, address, amount }) {
+  try {
+    const baseURL = process.env.NODE_ENV === 'production' 
+      ? process.env.BASE_URL || `http://localhost:${PORT}`
+      : `http://localhost:${PORT}`;
+    
+    const response = await axios.post(
+      `${baseURL}/withdraw`,
+      { userId, address, amount }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error("❌ Withdraw function error:", error?.response?.data || error.message);
+    return { 
+      success: false, 
+      message: error?.response?.data?.message || "Erro interno ao processar levantamento" 
+    };
+  }
+}
+
+// ====== ENDPOINT DE WITHDRAW ======
 app.post("/withdraw", async (req, res) => {
   try {
-
     console.log("📩 /withdraw foi chamado!", req.body);
 
     // ===== VALIDAR ENV =====
@@ -88,8 +115,8 @@ app.post("/withdraw", async (req, res) => {
     if (!userId || !address || !amount)
       return res.json({ success:false, message:"Dados incompletos" });
 
-    if (amount < 1)
-      return res.json({ success:false, message:"Mínimo 0.001 DOGE" });
+    if (amount <1)
+      return res.json({ success:false, message:"Mínimo 1 DOGE" });
 
     // ===== USER =====
     const { data: user } = await supabase
@@ -111,10 +138,10 @@ app.post("/withdraw", async (req, res) => {
     if (!house)
       return res.json({ success:false, message:"House não encontrada" });
 
-    if ((user.doge||1) < amount)
+    if ((user.doge||0) < amount)
       return res.json({ success:false, message:"Saldo insuficiente" });
 
-    if ((house.saldo||1) < amount)
+    if ((house.saldo||0) < amount)
       return res.json({ success:false, message:"House sem saldo" });
 
     // ===== CRIAR TX =====
@@ -135,22 +162,14 @@ app.post("/withdraw", async (req, res) => {
     tx.signatures = [];
     tx.pubkeys = [];
 
-    // criar pk a partir da private key (uma vez)
     const pk = Buffer.from(HOUSE_PRIVATE, "hex");
-
-    // criar pubkey compressa (33 bytes)
     const pubkey = Buffer.from(
       secp256k1.publicKeyCreate(pk, true)
     ).toString("hex");
 
     tx.tosign.forEach(ts => {
-      // ts já é hash pronto — não fazer SHA256 de novo
       const msg = Buffer.from(ts, "hex");
-
-      // assinatura raw r||s
       const sigObj = secp256k1.ecdsaSign(msg, pk);
-
-      // converter para DER
       const der = secp256k1.signatureExport(sigObj.signature);
 
       tx.signatures.push(Buffer.from(der).toString("hex"));
@@ -189,37 +208,12 @@ app.post("/withdraw", async (req, res) => {
 
   } catch(err) {
     console.error("WITHDRAW ERROR:", err?.response?.data || err?.message || err);
-    console.log("🔥 DEBUG ERROR:", err?.response?.data, err?.message);
-
     return res.json({
       success:false,
       message:"Erro ao processar withdraw"
     });
   }
 });
-
-// ====== FUNÇÃO AUXILIAR WITHDRAW ======
-async function withdrawDOGE({ userId, address, amount }) {
-  try {
-    // Para desenvolvimento local, usa localhost
-    const baseURL = process.env.NODE_ENV === 'production' 
-      ? process.env.BASE_URL || `http://localhost:${PORT}`
-      : `http://localhost:${PORT}`;
-    
-    const response = await axios.post(
-      `${baseURL}/withdraw`,
-      { userId, address, amount }
-    );
-    
-    return response.data;
-  } catch (error) {
-    console.error("❌ Withdraw function error:", error?.response?.data || error.message);
-    return { 
-      success: false, 
-      message: error?.response?.data?.message || "Erro interno ao processar levantamento" 
-    };
-  }
-}
 
 // ================== BOT COMMANDS ==================
 
@@ -229,36 +223,33 @@ bot.start(async ctx => {
   const name = ctx.from.first_name || "User";
 
   try {
-    const { data: user, error: selectError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("telegram_id", telegramId)
-      .single();
-
-    if (selectError && selectError.code !== "PGRST116") {
-      console.error("/start select error:", selectError);
-      return ctx.reply("⚠️ Erro ao verificar usuário.");
-    }
+    // Verificar se usuário já existe
+    let user = await getUserByTelegramId(telegramId);
 
     if (!user) {
-      const { error: insertError } = await supabase
+      // Criar novo usuário
+      const { data, error } = await supabase
         .from("users")
         .insert([{
           telegram_id: telegramId,
-          name,
+          name: name,
           doge: 0,
-          balance: 0
-        }]);
+          role: 'user'
+        }])
+        .select()
+        .single();
 
-      if (insertError) {
-        console.error("/start insert error:", insertError);
+      if (error) {
+        console.error("/start insert error:", error);
         return ctx.reply("⚠️ Erro ao criar conta.");
       }
+      
+      user = data;
+      console.log(`✅ Novo usuário criado: ${name} (ID: ${user.id})`);
     }
 
-    // ✅ RESPOSTA FINAL DO /start (COM BOTÕES)
     return ctx.reply(
-      `👋 Olá ${name}!\nBem-vindo ao DogePTC 🐕`,
+      `👋 Olá ${name}!\nBem-vindo ao DogePTC 🐕\n\n💰 Seu saldo: ${user.doge || 0} DOGE`,
       mainMenu
     );
 
@@ -268,46 +259,13 @@ bot.start(async ctx => {
   }
 });
 
+
 // 🚀 BOTÃO INICIAR
 bot.hears("🚀 INICIAR", ctx => {
-  ctx.reply("🤖 Bem-vindo ao DogePTC!", mainMenu);
+  ctx.reply("🤖 Bot iniciado!", mainMenu);
 });
 
-// BOTÃO GANHAR
-bot.hears("📺 GANHAR", async ctx => {
-  await ctx.reply(
-    "📢 Assista ao anúncio para ganhar DOGE.\nClique no botão abaixo para confirmar e receber sua recompensa!",
-    Markup.inlineKeyboard([
-      Markup.button.callback("✅ CONFIRMAR", "confirm_reward")
-    ])
-  );
-});
-
-// CALLBACK DO BOTÃO
-bot.action("confirm_reward", async ctx => {
-  const telegramId = ctx.from.id;
-
-  try {
-    // Chama a função no Supabase para adicionar a recompensa
-    const { error } = await supabase.rpc("add_balance", {
-      tg_id: telegramId,
-      amount: 0.1
-    });
-
-    if (error) throw error;
-
-    // Responde ao usuário e desativa o botão
-    await ctx.editMessageText("🎉 +0.1 DOGE adicionado! ✅");
-  } catch (err) {
-    console.error("Erro ao creditar recompensa:", err);
-    await ctx.reply("⚠️ Erro ao creditar recompensa. Tente novamente mais tarde.");
-  }
-
-  // Evita que o botão fique ativo e o usuário clique várias vezes
-  await ctx.answerCbQuery();
-});
-
-// 💰 BOTÃO SALDO
+// 💰 BOTÃO SALDO 
 bot.hears("💰 SALDO", async ctx => {
   const telegramId = ctx.from.id;
 
@@ -323,11 +281,153 @@ bot.hears("💰 SALDO", async ctx => {
   ctx.reply(`💰 Saldo atual: ${data.doge} DOGE`);
 });
 
+
+// BOTÃO GANHAR
+bot.hears("📺 GANHAR", async ctx => {
+  const telegramId = ctx.from.id;
+  
+  // Verificar se usuário existe
+  const user = await getUserByTelegramId(telegramId);
+  if (!user) {
+    return ctx.reply("❌ Você precisa usar /start primeiro.");
+  }
+
+  try {
+    // Buscar um anúncio aleatório que o usuário ainda não viu
+    const { data: ads } = await supabase
+      .from("ads")
+      .select("*")
+      .eq("active", true)
+      .order("reward", { ascending: false })
+      .limit(1);
+
+    if (!ads || ads.length === 0) {
+      return ctx.reply("📭 Nenhum anúncio disponível no momento. Volte mais tarde!");
+    }
+
+    const ad = ads[0];
+    
+    // Verificar se usuário já viu este anúncio
+    const { data: existingView } = await supabase
+      .from("ad_views")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("ad_id", ad.id)
+      .single();
+
+    if (existingView) {
+      return ctx.reply("❌ Você já visualizou este anúncio. Volte mais tarde para novos anúncios!");
+    }
+
+    // Salvar o ad_id na sessão para verificação posterior
+    ctx.session = ctx.session || {};
+    ctx.session.pendingAd = {
+      adId: ad.id,
+      userId: user.id,
+      reward: 0.1  // ALTERADO: SEMPRE 0.1 DOGE
+    };
+
+    await ctx.reply(
+      `📺 **${ad.title}**\n\n💰 Recompensa: 0.1 DOGE\n\nPara confirmar que assistiu, clique no botão abaixo:`,  // ALTERADO
+      Markup.inlineKeyboard([
+        Markup.button.callback("✅ CONFIRMAR VISUALIZAÇÃO", "confirm_reward")
+      ])
+    );
+
+  } catch (err) {
+    console.error("Erro ao buscar anúncio:", err);
+    await ctx.reply("⚠️ Erro ao carregar anúncios. Tente novamente mais tarde.");
+  }
+});
+
+// CALLBACK DO BOTÃO DE CONFIRMAÇÃO
+bot.action("confirm_reward", async ctx => {
+  const telegramId = ctx.from.id;
+  
+  if (!ctx.session || !ctx.session.pendingAd) {
+    await ctx.answerCbQuery();
+    return ctx.editMessageText("❌ Sessão expirada. Clique em GANHAR novamente.");
+  }
+
+  const { adId, userId, reward } = ctx.session.pendingAd;
+
+  try {
+    // Verificar novamente se não visualizou
+    const { data: existingView } = await supabase
+      .from("ad_views")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("ad_id", adId)
+      .single();
+
+    if (existingView) {
+      await ctx.answerCbQuery();
+      return ctx.editMessageText("❌ Você já recebeu a recompensa por este anúncio!");
+    }
+
+    // Registrar a visualização
+    const { error: viewError } = await supabase
+      .from("ad_views")
+      .insert([{
+        user_id: userId,
+        ad_id: adId,
+        viewed_at: new Date().toISOString()
+      }]);
+
+    if (viewError) throw viewError;
+
+    // Adicionar o saldo usando a função RPC
+    const { error: balanceError } = await supabase.rpc("add_balance", {
+      tg_id: telegramId,
+      amount: 0.1 
+    });
+
+    if (balanceError) {
+      // Fallback: atualizar manualmente
+      const user = await getUserByTelegramId(telegramId);
+      if (user) {
+        await supabase
+          .from("users")
+          .update({ 
+            doge: (user.doge || 0) + 0.1,  // 
+             
+          })
+          .eq("id", user.id);
+      }
+    }
+
+    // Limpar sessão
+    ctx.session.pendingAd = null;
+
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`🎉 Recompensa de 0.1 DOGE adicionada! ✅\n\n💰 Seu saldo foi atualizado.`); 
+
+  } catch (err) {
+    console.error("Erro ao creditar recompensa:", err);
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("⚠️ Erro ao creditar recompensa. Tente novamente mais tarde.");
+  }
+});
+
+
 // 💸 BOTÃO LEVANTAR
-bot.hears("💸 LEVANTAR", ctx => {
+bot.hears("💸 LEVANTAR", async ctx => {
+  const telegramId = ctx.from.id;
+  
+  const user = await getUserByTelegramId(telegramId);
+  if (!user) {
+    return ctx.reply("❌ Usuário não encontrado. Use /start primeiro.");
+  }
+
+  if ((user.doge || 0) < 1) {
+    return ctx.reply("❌ Saldo insuficiente. Mínimo 1 DOGE para levantar.");
+  }
+
   ctx.session = ctx.session || {};
+  ctx.session.withdrawUser = user;
   ctx.session.step = "amount";
-  ctx.reply("💸 INTRODUZIR O MONTANTE A LEVANTAR:");
+  
+  ctx.reply(`💸 Seu saldo: ${user.doge} DOGE\n\nDigite o valor que deseja levantar (mínimo 1 DOGE):`);
 });
 
 bot.on("text", async ctx => {
@@ -339,27 +439,34 @@ bot.on("text", async ctx => {
   if (ctx.session.step === "amount") {
     const amount = parseFloat(text);
 
-    if (isNaN(amount) || amount <= 0 || amount < 0.001)
-      return ctx.reply("❌ Valor inválido. Mínimo 0.001 DOGE. Introduz um número válido.");
+    if (isNaN(amount) || amount <= 0 || amount < 0.001) {
+      return ctx.reply("❌ Valor inválido. Mínimo 1 DOGE. Digite um número válido:");
+    }
+
+    const user = ctx.session.withdrawUser;
+    if ((user.doge || 0) < amount) {
+      return ctx.reply(`❌ Saldo insuficiente. Seu saldo: ${user.doge} DOGE\nDigite um valor menor:`);
+    }
 
     ctx.session.amount = amount;
     ctx.session.step = "address";
 
-    return ctx.reply("📬 INTRODUZIR O ENDEREÇO DOGE:");
+    return ctx.reply("📬 Digite seu endereço DOGE para receber os fundos:");
   }
 
   // PASSO 2 - ENDEREÇO 
   if (ctx.session.step === "address") {
-    if (!text || text.length < 26)
-      return ctx.reply("❌ Endereço inválido. Verifica e tenta novamente.");
+    if (!text || text.length < 26 || !text.startsWith('D')) {
+      return ctx.reply("❌ Endereço DOGE inválido. Certifique-se de que começa com 'D' e tem pelo menos 26 caracteres.\nDigite novamente:");
+    }
 
     ctx.session.address = text;
     ctx.session.step = "confirm";
 
     return ctx.reply(
-      `✅ Confirmação do levantamento\n\n💰 Valor: ${ctx.session.amount} DOGE\n📬 Endereço: ${text}`,
+      `✅ Confirmação do levantamento:\n\n💰 Valor: ${ctx.session.amount} DOGE\n📬 Endereço: ${text}\n\nTaxa de rede: 0.001 DOGE (aprox.)`,
       Markup.inlineKeyboard([
-        Markup.button.callback("✅ ENVIAR", "send_withdraw"),
+        Markup.button.callback("✅ CONFIRMAR E ENVIAR", "send_withdraw"),
         Markup.button.callback("❌ CANCELAR", "cancel_withdraw")
       ])
     );
@@ -376,49 +483,37 @@ bot.action("cancel_withdraw", async ctx => {
 bot.action("send_withdraw", async ctx => {
   await ctx.answerCbQuery();
 
-  const telegramId = ctx.from.id;
-  const { amount, address } = ctx.session || {};
+  const { amount, address, withdrawUser } = ctx.session || {};
 
-  if (!amount || !address) {
-    return ctx.reply("❌ Dados da sessão perdidos. Tenta novamente.");
+  if (!amount || !address || !withdrawUser) {
+    return ctx.editMessageText("❌ Dados da sessão perdidos. Tente novamente.");
   }
 
   try {
-    const { data: user } = await supabase
-      .from("users")
-      .select("id,doge")
-      .eq("telegram_id", telegramId)
-      .single();
-
-    if (!user)
-      return ctx.reply("❌ Usuário não encontrado.");
-
-    if ((user.doge || 0) < amount)
-      return ctx.reply("❌ Saldo insuficiente.");
-
     await ctx.editMessageText("⏳ Processando levantamento...");
 
     const result = await withdrawDOGE({
-      userId: user.id,
+      userId: withdrawUser.id,
       address,
       amount
     });
 
-    if (!result.success)
-      return ctx.reply(`❌ ${result.message}`);
+    if (!result.success) {
+      return ctx.reply(`❌ Erro: ${result.message}`);
+    }
 
-    await ctx.reply(`✅ Levantamento enviado!\nTX:\n${result.txHash}`);
+    await ctx.reply(`✅ Levantamento enviado com sucesso!\n\n💰 Valor: ${amount} DOGE\n📬 Para: ${address}\n🔗 TX Hash: ${result.txHash}\n\nO saldo será debitado da sua conta em instantes.`);
 
     ctx.session = null;
 
   } catch (err) {
     console.error("SEND_WITHDRAW ERROR:", err);
-    ctx.reply("⚠️ Erro ao processar levantamento.");
+    ctx.reply("⚠️ Erro ao processar levantamento. Tente novamente mais tarde.");
   }
 });
 
 // ================== START ==================
-console.log("✅ VOU INICIAR O BOT AGORA");
+console.log("✅ Iniciando bot...");
 
 bot.launch()
   .then(() => console.log("🤖 Bot Telegram ativo (polling)"))
@@ -427,3 +522,7 @@ bot.launch()
 app.listen(PORT, () =>
   console.log(`🌐 HTTP server ativo na porta ${PORT}`)
 );
+
+// Enable graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));

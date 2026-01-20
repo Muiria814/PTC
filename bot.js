@@ -88,7 +88,7 @@ app.post("/withdraw", async (req, res) => {
     if (!userId || !address || !amount)
       return res.json({ success:false, message:"Dados incompletos" });
 
-    if (amount < 0.001)
+    if (amount < 1)
       return res.json({ success:false, message:"Mínimo 0.001 DOGE" });
 
     // ===== USER =====
@@ -111,10 +111,10 @@ app.post("/withdraw", async (req, res) => {
     if (!house)
       return res.json({ success:false, message:"House não encontrada" });
 
-    if ((user.doge||0) < amount)
+    if ((user.doge||1) < amount)
       return res.json({ success:false, message:"Saldo insuficiente" });
 
-    if ((house.saldo||0) < amount)
+    if ((house.saldo||1) < amount)
       return res.json({ success:false, message:"House sem saldo" });
 
     // ===== CRIAR TX =====
@@ -270,7 +270,7 @@ bot.start(async ctx => {
 
 // 🚀 BOTÃO INICIAR
 bot.hears("🚀 INICIAR", ctx => {
-  ctx.reply("🤖 Bot iniciado!", mainMenu);
+  ctx.reply("🤖 Bem-vindo ao DogePTC!", mainMenu);
 });
 
 // BOTÃO GANHAR

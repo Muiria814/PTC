@@ -12,7 +12,6 @@ console.log("✅ CHEGUEI ATÉ AQUI (ANTES DO BOT)");
 console.log("SUPABASE_URL:", !!process.env.SUPABASE_URL);
 console.log("SERVICE_ROLE_KEY:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-
 const app = express();
 app.use(express.json());
 
@@ -54,7 +53,6 @@ const supabase = createClient(
 );
 
 // ================== BOT ==================
-const { Telegraf, Markup } = require("telegraf");
 const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
 
@@ -133,32 +131,31 @@ app.post("/withdraw", async (req, res) => {
     
     console.log("NEW TX:", newtx.data);
     
-// ===== ASSINAR CORRETAMENTE =====
-tx.signatures = [];
-tx.pubkeys = [];
+    // ===== ASSINAR CORRETAMENTE =====
+    tx.signatures = [];
+    tx.pubkeys = [];
 
-// criar pk a partir da private key (uma vez)
-const pk = Buffer.from(HOUSE_PRIVATE, "hex");
+    // criar pk a partir da private key (uma vez)
+    const pk = Buffer.from(HOUSE_PRIVATE, "hex");
 
-// criar pubkey compressa (33 bytes)
-const pubkey = Buffer.from(
-  secp256k1.publicKeyCreate(pk, true)
-).toString("hex");
+    // criar pubkey compressa (33 bytes)
+    const pubkey = Buffer.from(
+      secp256k1.publicKeyCreate(pk, true)
+    ).toString("hex");
 
-tx.tosign.forEach(ts => {
+    tx.tosign.forEach(ts => {
+      // ts já é hash pronto — não fazer SHA256 de novo
+      const msg = Buffer.from(ts, "hex");
 
-  // ts já é hash pronto — não fazer SHA256 de novo
-  const msg = Buffer.from(ts, "hex");
+      // assinatura raw r||s
+      const sigObj = secp256k1.ecdsaSign(msg, pk);
 
-  // assinatura raw r||s
-  const sigObj = secp256k1.ecdsaSign(msg, pk);
+      // converter para DER
+      const der = secp256k1.signatureExport(sigObj.signature);
 
-  // converter para DER
-  const der = secp256k1.signatureExport(sigObj.signature);
-
-  tx.signatures.push(Buffer.from(der).toString("hex"));
-  tx.pubkeys.push(pubkey);
-});
+      tx.signatures.push(Buffer.from(der).toString("hex"));
+      tx.pubkeys.push(pubkey);
+    });
     
     // ===== ENVIAR =====
     const sent = await axios.post(
@@ -169,13 +166,14 @@ tx.tosign.forEach(ts => {
 
     const txHash = sent?.data?.tx?.hash;
 
-if (!txHash) {
-  console.log("BLOCKCYPHER ERROR:", sent.data);
-  return res.json({
-    success:false,
-    message:"Falha ao enviar transação"
-  });
-}
+    if (!txHash) {
+      console.log("BLOCKCYPHER ERROR:", sent.data);
+      return res.json({
+        success:false,
+        message:"Falha ao enviar transação"
+      });
+    }
+    
     console.log("SEND RESULT:", sent.data);
     
     // ===== ATUALIZAR SALDOS =====
@@ -190,9 +188,7 @@ if (!txHash) {
     return res.json({ success:true, txHash });
 
   } catch(err) {
-
     console.error("WITHDRAW ERROR:", err?.response?.data || err?.message || err);
-
     console.log("🔥 DEBUG ERROR:", err?.response?.data, err?.message);
 
     return res.json({
@@ -202,6 +198,28 @@ if (!txHash) {
   }
 });
 
+// ====== FUNÇÃO AUXILIAR WITHDRAW ======
+async function withdrawDOGE({ userId, address, amount }) {
+  try {
+    // Para desenvolvimento local, usa localhost
+    const baseURL = process.env.NODE_ENV === 'production' 
+      ? process.env.BASE_URL || `http://localhost:${PORT}`
+      : `http://localhost:${PORT}`;
+    
+    const response = await axios.post(
+      `${baseURL}/withdraw`,
+      { userId, address, amount }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error("❌ Withdraw function error:", error?.response?.data || error.message);
+    return { 
+      success: false, 
+      message: error?.response?.data?.message || "Erro interno ao processar levantamento" 
+    };
+  }
+}
 
 // ================== BOT COMMANDS ==================
 
@@ -250,12 +268,10 @@ bot.start(async ctx => {
   }
 });
 
-
 // 🚀 BOTÃO INICIAR
 bot.hears("🚀 INICIAR", ctx => {
   ctx.reply("🤖 Bot iniciado!", mainMenu);
 });
-
 
 // BOTÃO GANHAR
 bot.hears("📺 GANHAR", async ctx => {
@@ -307,24 +323,24 @@ bot.hears("💰 SALDO", async ctx => {
   ctx.reply(`💰 Saldo atual: ${data.doge} DOGE`);
 });
 
-
 // 💸 BOTÃO LEVANTAR
 bot.hears("💸 LEVANTAR", ctx => {
-  ctx.session = { step: "amount" };
+  ctx.session = ctx.session || {};
+  ctx.session.step = "amount";
   ctx.reply("💸 INTRODUZIR O MONTANTE A LEVANTAR:");
 });
 
 bot.on("text", async ctx => {
-  if (!ctx.session?.step) return;
+  if (!ctx.session || !ctx.session.step) return;
 
   const text = ctx.message.text;
 
   // PASSO 1 — MONTANTE
   if (ctx.session.step === "amount") {
-    const amount = Number(text);
+    const amount = parseFloat(text);
 
-    if (isNaN(amount) || amount <= 0)
-      return ctx.reply("❌ Valor inválido. Introduz um número válido.");
+    if (isNaN(amount) || amount <= 0 || amount < 0.001)
+      return ctx.reply("❌ Valor inválido. Mínimo 0.001 DOGE. Introduz um número válido.");
 
     ctx.session.amount = amount;
     ctx.session.step = "address";
@@ -334,23 +350,38 @@ bot.on("text", async ctx => {
 
   // PASSO 2 - ENDEREÇO 
   if (ctx.session.step === "address") {
+    if (!text || text.length < 26)
+      return ctx.reply("❌ Endereço inválido. Verifica e tenta novamente.");
+
     ctx.session.address = text;
     ctx.session.step = "confirm";
 
     return ctx.reply(
       `✅ Confirmação do levantamento\n\n💰 Valor: ${ctx.session.amount} DOGE\n📬 Endereço: ${text}`,
       Markup.inlineKeyboard([
-        Markup.button.callback("✅ ENVIAR", "send_withdraw")
+        Markup.button.callback("✅ ENVIAR", "send_withdraw"),
+        Markup.button.callback("❌ CANCELAR", "cancel_withdraw")
       ])
     );
   }
 });
-    
+
+// Handler para cancelar withdraw
+bot.action("cancel_withdraw", async ctx => {
+  ctx.session = null;
+  await ctx.answerCbQuery();
+  await ctx.editMessageText("❌ Levantamento cancelado.");
+});
+
 bot.action("send_withdraw", async ctx => {
   await ctx.answerCbQuery();
 
   const telegramId = ctx.from.id;
-  const { amount, address } = ctx.session;
+  const { amount, address } = ctx.session || {};
+
+  if (!amount || !address) {
+    return ctx.reply("❌ Dados da sessão perdidos. Tenta novamente.");
+  }
 
   try {
     const { data: user } = await supabase
@@ -365,7 +396,7 @@ bot.action("send_withdraw", async ctx => {
     if ((user.doge || 0) < amount)
       return ctx.reply("❌ Saldo insuficiente.");
 
-    ctx.reply("⏳ Processando levantamento...");
+    await ctx.editMessageText("⏳ Processando levantamento...");
 
     const result = await withdrawDOGE({
       userId: user.id,
@@ -376,7 +407,7 @@ bot.action("send_withdraw", async ctx => {
     if (!result.success)
       return ctx.reply(`❌ ${result.message}`);
 
-    ctx.reply(`✅ Levantamento enviado!\nTX:\n${result.txHash}`);
+    await ctx.reply(`✅ Levantamento enviado!\nTX:\n${result.txHash}`);
 
     ctx.session = null;
 
@@ -386,7 +417,6 @@ bot.action("send_withdraw", async ctx => {
   }
 });
 
- 
 // ================== START ==================
 console.log("✅ VOU INICIAR O BOT AGORA");
 

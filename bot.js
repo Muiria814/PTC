@@ -402,6 +402,10 @@ bot.action("confirm_reward", async ctx => {
       .eq("ad_id", adId)
       .single();
 
+if (view.paid === true) {
+  return ctx.editMessageText("❌ Este anúncio já foi pago.");
+}
+
     if (existingView) {
       await ctx.answerCbQuery();
       return ctx.editMessageText("❌ Você já recebeu a recompensa por este anúncio!");

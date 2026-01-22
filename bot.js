@@ -30,6 +30,9 @@ REQUIRED_ENV.forEach(v => {
   }
 });
 
+// ================== CONFIGURAÇÕES GLOBAIS ==================
+const MIN_VIEW_TIME = 10; // segundos mínimos obrigatórios
+
 // ================== SUPABASE ==================
 const supabase = createClient(
   process.env.SUPABASE_URL,

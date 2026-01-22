@@ -328,11 +328,19 @@ bot.hears("📺 GANHAR", async ctx => {
     };
 
     await ctx.reply(
-      `📺 **${ad.title}**\n\n💰 Recompensa: 0.1 DOGE\n\nPara confirmar que assistiu, clique no botão abaixo:`,  // ALTERADO
-      Markup.inlineKeyboard([
-        Markup.button.callback("✅ CONFIRMAR VISUALIZAÇÃO", "confirm_reward")
-      ])
-    );
+  `📺 *${ad.title}*\n\n` +
+  `📝 ${ad.description}\n\n` +
+  `🔗 ${ad.url}\n\n` +
+  `💰 Recompensa: 0.1 DOGE\n\n` +
+  `⚠️ Visite o link e depois confirme.`,
+  {
+    parse_mode: "Markdown",
+    ...Markup.inlineKeyboard([
+      Markup.button.url("🌐 ABRIR ANÚNCIO", ad.url),
+      Markup.button.callback("✅ CONFIRMAR VISUALIZAÇÃO", "confirm_reward")
+    ])
+  }
+);
 
   } catch (err) {
     console.error("Erro ao buscar anúncio:", err);

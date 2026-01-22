@@ -337,6 +337,18 @@ ctx.session.pendingAd = {
       .eq("ad_id", ad.id)
       .single();
 
+const elapsedSeconds = Math.floor(
+      (Date.now() - new Date(existingView.timestamp).getTime()) / 1000
+    );
+
+    if (elapsedSeconds < MIN_VIEW_TIME) {
+      await ctx.answerCbQuery();
+      return ctx.editMessageText(
+        `⏱️ Aguarde pelo menos ${MIN_VIEW_TIME} segundos.\n` +
+        `Tempo atual: ${elapsedSeconds}s`
+      );
+    }
+
     if (existingView) {
       return ctx.reply("❌ Você já visualizou este anúncio. Volte mais tarde para novos anúncios!");
     }

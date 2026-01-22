@@ -304,6 +304,8 @@ bot.hears("📺 GANHAR", async ctx => {
       .order("reward", { ascending: false })
       .limit(1);
 
+console.log("Ads retornados:", ads);
+
     if (!ads || ads.length === 0) {
       return ctx.reply("📭 Nenhum anúncio disponível no momento. Volte mais tarde!");
     }

@@ -358,7 +358,7 @@ const elapsedSeconds = Math.floor(
     ctx.session.pendingAd = {
       adId: ad.id,
       userId: user.id,
-      reward: 0.1  // ALTERADO: SEMPRE 0.1 DOGE
+      reward: 0.1  //
     };
 
     await ctx.reply(
@@ -405,6 +405,11 @@ bot.action("confirm_reward", async ctx => {
 if (view.paid === true) {
   return ctx.editMessageText("❌ Este anúncio já foi pago.");
 }
+
+await supabase
+  .from("ad_views")
+  .update({ paid: true })
+  .eq("id", view.id);
 
     if (existingView) {
       await ctx.answerCbQuery();

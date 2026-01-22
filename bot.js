@@ -309,6 +309,25 @@ bot.hears("📺 GANHAR", async ctx => {
     }
 
     const ad = ads[0];
+
+const { data: view, error } = await supabase
+  .from("ad_views")
+  .insert([{
+    user_id: user.id,
+    ad_id: ad.id,
+    paid: false,
+    timestamp: new Date().toISOString()
+  }])
+  .select()
+  .single();
+
+if (error) throw error;
+
+// Guardar referência segura na sessão
+ctx.session.pendingAd = {
+  viewId: view.id,
+  startedAt: view.timestamp
+};
     
     // Verificar se usuário já viu este anúncio
     const { data: existingView } = await supabase
